@@ -2,6 +2,9 @@ from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
 import jwt
 from functools import wraps
+import pandas as pd
+# Load the CSV file into a pandas DataFrame
+seats = pd.read_csv("data.csv")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'my_secret_key'
@@ -9,14 +12,7 @@ sample_users = {
     'username':"test",
     'password':"test"
 }
-seats = [
-    {'id': 1, 'number': 'A1', 'available': True},
-    {'id': 2, 'number': 'A2', 'available': True},
-    {'id': 3, 'number': 'A3', 'available': True},
-    {'id': 4, 'number': 'B1', 'available': True},
-    {'id': 5, 'number': 'B2', 'available': True},
-    {'id': 6, 'number': 'B3', 'available': True},
-]
+
 
 @app.route('/token', methods=['POST'])
 def generate_token():
@@ -69,34 +65,30 @@ def verify_token(func):
 @app.route('/seats', methods=['GET'])
 @verify_token
 def get_seats():
-    print(request.args.get('name'))
-    print(request.json)
-    return jsonify(seats)
+    return jsonify(seats.to_dict('records'))
 
 @app.route('/seats/book', methods=['POST'])
 @verify_token
 def book_seats():
-    selected_seats = request.json.get('seats', [])
+    selected_seat_nums = request.json.get('seats', [])
 
     # Find the seats that were selected
-    selected_seat_ids = [int(seat_id) for seat_id in selected_seats]
-    selected_seats = [seat for seat in seats if seat['id'] in selected_seat_ids]
-
+    selected_seats = seats[seats['number'].isin(selected_seat_nums)].to_dict('records')
     # Check if all selected seats are available
     for seat in selected_seats:
         if not seat['available']:
             return jsonify({'message': 'Seat {} is not available'.format(seat['number'])}), 400
 
     # Book the selected seats
-    for seat in selected_seats:
-        seat['available'] = False
+    seats.loc[seats['number'].isin(selected_seat_nums), 'available'] = False
 
     # Count the number of available seats
     available_seats = dict()
-    available_seats['seat_numbers'] = [seat['number'] for seat in seats if seat['available']]
+    #available_seats['seat_numbers'] = [seat['number'] for seat in seats if seat['available']]
+    available_seats['seat_numbers'] = seats.loc[seats['available'], 'number'].tolist()
     available_seats['total'] = len(available_seats['seat_numbers'])
-
-    return jsonify({'message': 'Successfully booked seats {}'.format(selected_seats),
+    seats.to_csv("data.csv", index=False)
+    return jsonify({'message': 'Successfully booked seats {}'.format(selected_seat_nums),
                     'available_seats': available_seats}), 200
 
 if __name__ == '__main__':
